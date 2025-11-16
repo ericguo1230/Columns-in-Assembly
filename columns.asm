@@ -620,10 +620,7 @@ draw_curr_column_loop:
     sw $a1, 4($sp) #LOAD IN Y COORDINATE
     sw $a2, 8($sp) #load in color
     
-    #PARAMETERS:
-    # $a0: x coordinate 
-    # $a1: y coordinate
-    # IMPLEMENT VALID COORDINATE CHECKER
+    # TODO: IMPLEMENT VALID COORDINATE CHECKER BEFORE DRAWING PIXEL?
     
     jal draw_pixel
     
@@ -889,7 +886,8 @@ response_to_S_check_loop:
     
     jal check_in_bounds
     
-    #TODO: CHECK FOR COLLISIONS TOO (YOU CAN USE THE MEMORY BLOCK I ALLOCATED IN 'PLAYING_FIELD_HEIGHTS' OR 'PLAYING_FIELD')
+    #TODO: CHECK FOR COLLISIONS TOO (YOU CAN USE THE MEMORY BLOCK I ALLOCATED IN 'PLAYING_FIELD_HEIGHTS' OR 'PLAYING_FIELD') 
+    # (YOU CAN IMPLEMENT A FUNCTION TO CHECK FOR COLLISIONS AND JUST JAL)
     
     lw $v1, 0($sp) #RETURN VALUE FROM 'check_in_bounds'
     lw $a0, 4($sp) #New x coord
