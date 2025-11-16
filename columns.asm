@@ -121,15 +121,22 @@ game_loop:
 	# 3. Draw the screen
 	jal draw_screen
 	# 4. Sleep
-
+    jal sleep_60fps
     # 5. Go back to Step 1
     j game_loop
+    
+sleep_60fps:
+    li $v0, 32
+    li $a0, 100
+    syscall
+    jr $ra
 
 draw_screen:
     #Save return address
     addi $sp, $sp, -4
     sw $ra 0($sp)
     
+    jal clear_screen
     jal draw_gameboard #DRAW BOARD BOUNDARY
     jal draw_curr_column #DRAW CURRENT COLUMN
     jal draw_next_column
@@ -137,6 +144,18 @@ draw_screen:
     lw $ra 0($sp)
     addi $sp, $sp, 4
     jr $ra
+    
+clear_screen:
+    lw   $t0, ADDR_DSPL      # load actual display base address into $t0
+    li   $t1, 0              # clear color (black)
+    li   $t2, 1024           # number of pixels to clear (32 x 32)
+
+clear_loop:
+    sw   $t1, 0($t0)         # write black pixel
+    addi $t0, $t0, 4         # next pixel
+    addi $t2, $t2, -1
+    bnez $t2, clear_loop
+    jr   $ra
     
 # Draw the initial game
 setup_game:
@@ -726,10 +745,17 @@ keyboard_input_check:
     lw $t8, 0($t0)
     beq $t8, 1, keyboard_input
 
+keyboard_input_check_end:
+    jr $ra
+
 keyboard_input:
+    lw $t0, ADDR_KBRD
     lw $t2, 4($t0)
     beq $t2, 0x71, respond_to_Q #Quit if 'q' is pressed
     beq $t2, 0x61, respond_to_A #Quit if 'a' is pressed
+    
+keyboard_input_return:
+    jr $ra
 
 respond_to_A:
     #STEP 0: LOAD IN COLUMN COORDINATIONS (THESE WILL BE THE CORDS OF THE TOP GEM)
@@ -746,7 +772,7 @@ respond_to_A:
     li $a3, 3
     
     #STEP 1: CHECK VALID BOUNDARY TO THE LEFT
-    subi $a0, $a0, -1
+    addi $a0, $a0, -1
 
 response_to_A_check_loop:
     bge $t7, $a3, move_gems_left
