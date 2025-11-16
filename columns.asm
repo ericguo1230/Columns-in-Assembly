@@ -87,7 +87,11 @@ PLAYING_FIELD:
     .space 312
 
 # The number of bytes to display the current column colors(3 x 1) ints (4 bytes long) 
-CURR_COLUMN:
+CURR_COLUMN_COLORS:
+    .space 12
+    
+# The number of bytes to display the current column colors(3 x 1) ints (4 bytes long) 
+NEXT_COLUMN_COLORS:
     .space 12
 
 #Store the (x, y) coordinates of the current column
@@ -108,7 +112,6 @@ PLAYING_FIELD_HEIGHTS:
 main:
     # Initialize the game
     jal setup_game
-    
     # li $v0, 10
     # syscall
 
@@ -118,6 +121,10 @@ game_loop:
     jal keyboard_input_check
     # 2a. Check for collisions
 	# 2b. Update locations (capsules)
+
+    # TODO: IMPLEMENT LOGIC TO CHECK IF COLUMN HITS GROUND (IF SO RESET YOU NEED TO SAVE THE COLUMN AND CREATE A NEW ONE FROM START POSITION)
+    # SUGGESTION: USE THE 'change_curr_column_from_next' FUNCTION TO LOAD NEXT COLUMN COLORS INTO CURR_COLUMN THEN RESET POSITION?
+
 	# 3. Draw the screen
 	jal draw_screen
 	# 4. Sleep
@@ -165,6 +172,7 @@ setup_game:
     
     jal draw_gameboard #DRAW GAMEBOARD
     jal draw_random_column
+    jal change_curr_column_from_next
     jal setup_column_position
     
     lw $ra 0($sp)
@@ -300,23 +308,18 @@ draw_random_column_loop:
     addi $sp, $sp, -8
     sw $a0, 0($sp) #x coord for displaying next column
     sw $a1, 4($sp) #y coord for displaying next column
+
     jal generate_random_num
+
     # Step 2: Get the color from the number
     jal get_color_from_number
-    # Step 3: draw the pixel
+    
     lw $a2, 0($sp)  #Get the color from top of stack passed on from 'get_color_from_number'
     lw $a0, 4($sp) #x coord for displaying next column
     lw $a1, 8($sp) #y coord for displaying next column
     addi $sp, $sp, 12
     
-    # Push params onto stack
-    addi $sp, $sp, -12
-    sw $a0, 0($sp) #x coordinate
-    sw $a1, 4($sp) #y coordinate
-    sw $a2, 8($sp) #color
-    jal draw_pixel
-    
-    # Step 4: save the pixel in our CURR_COLUMN
+    # Step 3: save the pixel in our CURR_COLUMN
     jal save_color_curr_column
     
     #update $a1 by $t6
@@ -329,26 +332,51 @@ draw_random_column_loop_end:
     addi $sp, $sp, 4
     jr $ra
     
+
+#DRAW NEXT COLUMN TO CURRENT COLUMN
+change_curr_column_from_next:
+    la $t9, CURR_COLUMN_COLORS #Load base address of CURR_COLUMN_COLORS
+    la $t8, NEXT_COLUMN_COLORS #Load base address of NEXT_COLUMN_COLORS
+
+    lw $a0, 0($t8) #Load first color from NEXT_COLUMN_COLORS
+    lw $a1, 4($t8) #Load first color from NEXT_COLUMN_COLORS
+    lw $a2, 8($t8) #Load first color from NEXT_COLUMN_COLORS
+
+    sw $a0, 0($t9) #Load first color from CURR_COLUMN_COLORS
+    sw $a1, 4($t9) #Load second color from CURR_COLUMN_COLORS
+    sw $a2, 8($t9) #Load third color from CURR_COLUMN_COLORS
+
+    #SAVE RETURN ADDRESS
+    addi $sp, $sp, -4
+    sw $ra 0($sp)
+
+    jal draw_random_column
+
+change_curr_column_from_next_end:
+    lw $ra 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+
 #Take 2 params:
 #1: Color stored in $a2
 #2: Block index stored in $t6
 save_color_curr_column:
-    la $t0, CURR_COLUMN
+    la $t9, NEXT_COLUMN_COLORS #Load base address of NEXT_COLUMN_COLORS
     
     #compute index offset into memory address
     mult $t1, $t6, 4
     
     #update pointer
-    add $t0, $t0, $t1
+    add $t9, $t9, $t1
     
     #Save color at address
-    sw $a2, 0($t0)
+    sw $a2, 0($t9)
     jr $ra
     
 draw_random_column_end:
     lw $ra 0($sp)
     addi $sp, $sp, 4
-    
     jr $ra
     
 #Generate a random number and push it to top of stack
@@ -575,7 +603,7 @@ draw_curr_column:
     la $t9, CURR_COLUMN_COORD
     lw $a0, 0($t9) #LOAD IN X COORDINATE
     lw $a1, 4($t9) #LOAD IN Y COORDINATE
-    la $t8, CURR_COLUMN
+    la $t8, CURR_COLUMN_COLORS
     
     li $t7, 0 #initialize loop counter
     li $a3, 3 #initialize loop counter end value
@@ -613,7 +641,7 @@ draw_curr_end:
 draw_next_column:
     lw $a0, NEXT_COLUMN_X
     lw $a1, NEXT_COLUMN_Y
-    la $t8, CURR_COLUMN
+    la $t8, NEXT_COLUMN_COLORS
     
     li $t7, 0 #initialize loop counter
     li $a3, 3 #initialize loop counter end value
@@ -755,6 +783,7 @@ keyboard_input:
     beq $t2, 0x61, respond_to_A #Quit if 'a' is pressed
     beq $t2, 0x64, respond_to_D #Quit if 'd' is pressed
     beq $t2, 0x73, respond_to_S #Quit if 's' is pressed
+    beq $t2 0x77, respond_to_W #Quit if 'w' is pressed
     
 keyboard_input_return:
     jr $ra
@@ -926,6 +955,22 @@ return_response_S:
     lw $ra, 0($sp)
     addi $sp, $sp, 4
     jr $ra    
+
+respond_to_W:
+    #STEP 0: LOAD IN COLUMN COLORS
+    la $t8, CURR_COLUMN_COLORS
+    lw $t0, 0($t8) #First color
+    lw $t1, 4($t8) #Second color
+    lw $t2, 8($t8) #Third color
+
+W_swap_colors:
+    #SWAP COLORS
+    sw $t2, 0($t8) #First color
+    sw $t0, 4($t8) #Second color
+    sw $t1, 8($t8) #Third color
+
+return_response_W:
+    jr $ra  
 
 
 #TERMINATE PROGRAM
