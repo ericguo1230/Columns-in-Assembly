@@ -94,7 +94,7 @@ CURR_COLUMN_COLORS:
 NEXT_COLUMN_COLORS:
     .space 12
 
-#Store the (x, y) coordinates of the current column
+#Store the (x, y) coordinates of the current column IMPORTANT: (THIS ONLY STORES THE TOP COORDINATE, ADD 1 TO Y TO GET THE 2nd AND BOTTOM GEM COORDINATE)
 CURR_COLUMN_COORD:
     .space 8
 
@@ -176,6 +176,7 @@ setup_game:
     jal draw_random_column
     jal change_curr_column_from_next
     jal setup_column_position
+    #TODO: DRAW COLUMNS THAT HAVE BEEN PLAYED IN GAMEBOAARD USE JAL one of the functions I mention later in #TODO HERE
     
     lw $ra 0($sp)
     addi $sp, $sp, 4
@@ -192,6 +193,9 @@ setup_column_position:
     add $a0, $a0, $t0
     add $a1, $a1, $t1
 
+    #TODO: MAYBE START THE COLUMN IN A HIGHER POSITION SO IT FALLS DOWN
+    #TODO: MAYBE START ABOVE THE CEILING AND DRAW IT IN AS THE USER PRESSES 'S'
+    #TODO: IMPLEMENT SOME CHECKER BEFORE DRAWING PIXEL SO YOU ONLY DRAW THE VALID COLUMN PIXELS
     addi $a0, $a0, 5
     addi $a1, $a1, 5
     
@@ -679,51 +683,8 @@ draw_next_end:
 # START OF DRAW IN GAME FUNCTION
 #-------
 
-#I want this to take in 3 parameters;
-# 1 color 
-# 2 - 3: (x, y) coordinate 
-#These will all be in the stack when I call it so pop 5 times total (pop 2 in store_in_playing_field (pop last 3 again in draw_pixel)
-draw_pixel_board:
-    #-----
-    # LOAD PARAMETER VALUES PASSED IN
-    #----
-    lw $t0, 0($sp) #This will be the color
-    lw $t1, 4($sp) #This will be the x coordinate
-    lw $t2, 8($sp) #This will be the y coordinate
-    
-    #-----
-    # SAVE PARAMETER VALUES ONTO STACK FOR STORE_IN_PLAYING_FIELD (RA FOR OUR FUNCTION RETURN ADDRESS)
-    #----
-    addiu $sp, $sp, -16 #make 4 * 6 bytes of space on the stack
-    sw $t0, 0($sp) #This will be the color
-    sw $t1, 4($sp) #This will be the x coordinate
-    sw $t2, 8($sp) #This will be the y coordinate
-    sw $ra, 12($sp) #Save return address to stack
-    
-    jal store_in_playing_field #Store the pixel in the PLAYING_FIELD first
-    
-    #-----
-    # LOAD PARAMETER VALUES FROM WHAT WAS PASSED IN
-    #----
-    lw $t7, ADDR_DSPL #Load Bitmap address into t0
-    lw $ra, 0($sp) #RETURN ADDRESS SHOULD BE AT THE TOP
-    lw $t0, 4($sp) #This will be the color
-    lw $t1, 8($sp) #This will be the x coordinate
-    lw $t2, 12($sp) #This will be the y coordinate
-    addi $sp, $sp 16 #move stack pointer down 
-
-    mul $t2, $t2, 128 # skip (128 * y) or (4 * 32 (each address is 4 bytes and 32 addresses in a row))
-    mul $t1, $t1, 4 # x offset (multiply by 4 bytes)
-    
-    # add the row and column offsets to the base address
-    add $t7, $t7, $t1
-    add $t7, $t7, $t2
-    
-    # store the color at the computed address
-    sw $t0, 0($t7)
-    
-    #return to caller
-    jr $ra
+#TODO: MAYBE IMPLEMENT A 'draw_column_in_board' FUNCTION HERE TO DRAW THE COLUMNS THAT HAVE BEEN PLAYED ON THE BOARD
+# YOU CAN LOOP THROUGH THE 'PLAYING_FIELD' MEMORY BLOCK AND DRAW PIXELS BASED ON THE COLOR VALUES STORED THERE
     
 #I want this to take in 3 parameters;
 # 1 color 
