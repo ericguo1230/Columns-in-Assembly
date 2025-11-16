@@ -124,6 +124,11 @@ game_loop:
 	# 2b. Update locations (capsules)
 
     # TODO: IMPLEMENT LOGIC TO CHECK IF COLUMN HITS GROUND (IF SO RESET YOU NEED TO SAVE THE COLUMN AND CREATE A NEW ONE FROM START POSITION)
+    # PSEUDOCODE SUGGESTION:
+        #STEP 1: CHECK IF IT HITS GROUN OR TOP OF A PLACE COLUMN BLOCK ON BOARD
+        #STEP 2: IF IT DOES PLACE ON SCREEN USING 'store_in_playing_field' FUNCTION
+        #STEP 3: RESET THE CURR_COLUMN_COORD TO STARTING POSITION use 'setup_column_position' FUNCTION
+        #STEP 4: THEN GENERATE A NEW COLUMN USING 'change_curr_column_from_next' FUNCTION -> THIS WILL SHIFT NEXT COLUMN COLORS TO CUR COLUMN AND CREATE A NEW RANDOM NEXT_COLUMN
 
 	# 3. Draw the screen
 	jal draw_screen
@@ -292,7 +297,7 @@ draw_gameboard:
     addi $sp, $sp, 4
     jr $ra
 
-#Draw random column
+#DRAW NEXT COLUMN WITH RANDOM COLORS
 draw_random_column:
     #Save return address before performing other actions
     addi $sp, $sp, -4
@@ -307,8 +312,6 @@ draw_random_column:
 draw_random_column_loop:
     bge $t6, $a3, draw_random_column_loop_end
     # Step 1: Get a random number
-    #Save param a values to stack as 'generate_random_num' overwrites registers
-
     jal generate_random_num
 
     # Step 2: Get the color from the number
@@ -317,8 +320,8 @@ draw_random_column_loop:
     lw $a2, 0($sp)  #Get the color from top of stack passed on from 'get_color_from_number'
     addi $sp, $sp, 4
     
-    # Step 3: save the pixel in our CURR_COLUMN
-    jal save_color_curr_column
+    # Step 3: save the pixel in our NEXT_COLUMN
+    jal save_color_next_column
     
     #update $a1 by $t6
     addi $t6, $t6, 1
@@ -358,7 +361,7 @@ change_curr_column_from_next_end:
 #Take 2 params:
 #1: Color stored in $a2
 #2: Block index stored in $t6
-save_color_curr_column:
+save_color_next_column:
     la $t9, NEXT_COLUMN_COLORS #Load base address of NEXT_COLUMN_COLORS
     
     #compute index offset into memory address
