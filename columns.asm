@@ -45,7 +45,7 @@ GAMEBOARD_HEIGHT:
 
 #WIDTH OF THE GAMEBOARD
 GAMEBOARD_WIDTH:
-    .word 0x00000008
+    .word 0x00000006
 
 #Colors of GAMEBOARD WALLS
 GAMEBOARD_COLOR:
@@ -53,10 +53,10 @@ GAMEBOARD_COLOR:
     
 #COORDINATES OF THE 'NEXT COLUMN'
 NEXT_COLUMN_X:
-    .word 0x00000012
+    .word 0x00000014
 
 NEXT_COLUMN_Y:
-    .word 0x00000008
+    .word 0x0000000c
 
 #-----GEM COLORS-----
 COLOR_RED:
@@ -86,9 +86,13 @@ COLOR_ORANGE:
 PLAYING_FIELD:
     .space 312
 
-# The number of bytes to display the current column (3 x 1) ints (4 bytes long) 
+# The number of bytes to display the current column colors(3 x 1) ints (4 bytes long) 
 CURR_COLUMN:
     .space 12
+
+#Store the (x, y) coordinates of the current column
+CURR_COLUMN_COORD:
+    .space 8
 
 # The number of bytes needed to store the height of each column in playing field (4 x 6 ints)
 PLAYING_FIELD_HEIGHTS:
@@ -104,33 +108,73 @@ PLAYING_FIELD_HEIGHTS:
 main:
     # Initialize the game
     jal setup_game
-    li $v0, 10
-    syscall
+    
+    # li $v0, 10
+    # syscall
 
 game_loop:
     # 1a. Check if key has been pressed
     # 1b. Check which key has been pressed
+    jal keyboard_input_check
     # 2a. Check for collisions
 	# 2b. Update locations (capsules)
 	# 3. Draw the screen
+	jal draw_screen
 	# 4. Sleep
 
     # 5. Go back to Step 1
     j game_loop
 
+draw_screen:
+    #Save return address
+    addi $sp, $sp, -4
+    sw $ra 0($sp)
+    
+    jal draw_gameboard #DRAW BOARD BOUNDARY
+    jal draw_curr_column #DRAW CURRENT COLUMN
+    jal draw_next_column
+    
+    lw $ra 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+    
 # Draw the initial game
 setup_game:
     #Save return address
     addi $sp, $sp, -4
     sw $ra 0($sp)
     
-    jal draw_gameboard
+    jal draw_gameboard #DRAW GAMEBOARD
     jal draw_random_column
+    jal setup_column_position
     
     lw $ra 0($sp)
     addi $sp, $sp, 4
     jr $ra
+
+setup_column_position:
+    la $t9, CURR_COLUMN_COORD
+    lw $a0, 0($t9) # x coordinate
+    lw $a1, 4($t9) # y coordinate
     
+    lw $t0, GAMEBOARD_OFFSET_X
+    lw $t1, GAMEBOARD_OFFSET_X
+    
+    add $a0, $a0, $t0
+    add $a1, $a1, $t1
+
+    addi $a0, $a0, 5
+    addi $a1, $a1, 5
+    
+    #SAVE BACK TO CURR_COLUMN_COORD
+    sw $a0, 0($t9) # x coordinate
+    sw $a1, 4($t9) # y coordinate
+    
+    jr $ra
+    
+#-------
+# START OF DRAW GAMEBOARD FUNCTIONS
+# ------
 #This will draw the initial gameboard (DO NOT TAKE ANY PARAMS AS INPUT)
 draw_gameboard:
     #THIS WILL DRAW THE CEILING
@@ -143,6 +187,8 @@ draw_gameboard:
     #Save return address at the bottom of my stack (only need to do this once)
     addi $sp, $sp, -4
     sw $ra, 0($sp)
+    
+    addi $a3, $a3, 1
     
     addi $sp, $sp, -16
     sw $a0, 0($sp) #Save x coord
@@ -162,6 +208,8 @@ draw_gameboard:
     lw $t0, GAMEBOARD_HEIGHT
     addi $t0, $t0, 1
     add $a1, $a1, $t0
+    
+    addi $a3, $a3, 1
     
     #Save x, y coord color and size these are params to be passed on through stack
     addi $sp, $sp, -16 
@@ -199,7 +247,6 @@ draw_gameboard:
     #Add size of line by 1 to accomodate height
     addi $a3, $a3, 1
     lw $t0, GAMEBOARD_WIDTH
-    subi $t0, $t0, 1
     add $a0, $a0, $t0
     
     #These are function params to be passed on
@@ -230,7 +277,7 @@ draw_random_column:
 draw_random_column_loop:
     bge $t6, $a3, draw_random_column_loop_end
     # Step 1: Get a random number
-    #Save param a values to stack as 'generate_random_num' uses a registers
+    #Save param a values to stack as 'generate_random_num' overwrites registers
     addi $sp, $sp, -8
     sw $a0, 0($sp) #x coord for displaying next column
     sw $a1, 4($sp) #y coord for displaying next column
@@ -262,6 +309,7 @@ draw_random_column_loop_end:
     lw $ra, 0($sp) #load return address
     addi $sp, $sp, 4
     jr $ra
+    
 #Take 2 params:
 #1: Color stored in $a2
 #2: Block index stored in $t6
@@ -305,7 +353,7 @@ get_color_from_number:
     li $t1, 1
     beq $t0, $t1, eq_one #COLOR RED WHEN 1
     li $t1, 2
-    beq $t0, $t1, eq_two
+    beq $t0, $t1, eq_two #COLOR BLUE WHEN 2
     li $t1, 3
     beq $t0, $t1, eq_three
     li $t1, 4
@@ -370,76 +418,6 @@ eq_five:
 #Return back
 get_color_from_number_end:
     jr $ra
-    
-#I want this to take in 3 parameters;
-# 1 color 
-# 2 - 3: (x, y) coordinate 
-#These will all be in the stack when I call it so pop 5 times total (pop 2 in store_in_playing_field (pop last 3 again in draw_pixel)
-draw_pixel_board:
-    #-----
-    # LOAD PARAMETER VALUES PASSED IN
-    #----
-    lw $t0, 0($sp) #This will be the color
-    lw $t1, 4($sp) #This will be the x coordinate
-    lw $t2, 8($sp) #This will be the y coordinate
-    
-    #-----
-    # SAVE PARAMETER VALUES ONTO STACK FOR STORE_IN_PLAYING_FIELD (RA FOR OUR FUNCTION RETURN ADDRESS)
-    #----
-    addiu $sp, $sp, -16 #make 4 * 6 bytes of space on the stack
-    sw $t0, 0($sp) #This will be the color
-    sw $t1, 4($sp) #This will be the x coordinate
-    sw $t2, 8($sp) #This will be the y coordinate
-    sw $ra, 12($sp) #Save return address to stack
-    
-    jal store_in_playing_field #Store the pixel in the PLAYING_FIELD first
-    
-    #-----
-    # LOAD PARAMETER VALUES FROM WHAT WAS PASSED IN
-    #----
-    lw $t7, ADDR_DSPL #Load Bitmap address into t0
-    lw $ra, 0($sp) #RETURN ADDRESS SHOULD BE AT THE TOP
-    lw $t0, 4($sp) #This will be the color
-    lw $t1, 8($sp) #This will be the x coordinate
-    lw $t2, 12($sp) #This will be the y coordinate
-    addi $sp, $sp 16 #move stack pointer down 
-
-    mul $t2, $t2, 128 # skip (128 * y) or (4 * 32 (each address is 4 bytes and 32 addresses in a row))
-    mul $t1, $t1, 4 # x offset (multiply by 4 bytes)
-    
-    # add the row and column offsets to the base address
-    add $t7, $t7, $t1
-    add $t7, $t7, $t2
-    
-    # store the color at the computed address
-    sw $t0, 0($t7)
-    
-    #return to caller
-    jr $ra
-
-store_in_playing_field:
-    la $t7, PLAYING_FIELD
-    
-    lw $t3, GAMEBOARD_OFFSET_X
-    lw $t4, GAMEBOARD_OFFSET_Y
-    lw $t0, 0($sp) #This will be the color
-    lw $t1, 4($sp) #This will be the x coordinate
-    lw $t2, 8($sp) #This will be the y coordinate
-    addi $sp, $sp 12
-    
-    #Calculate memory address to store color pointe rin with offset factored in
-    sub $t1, $t1, $t3
-    sub $t2, $t2, $t4
-    
-    mul $t2, $t2, 32 # skip (32 * y) or (4 * 8 (each address is 4 bytes and 8 addresses in a row in the playable space))
-    mul $t1, $t1, 4 # x offset (multiply by 4 bytes)
-    
-    # add the row and column offsets to the base address
-    add $t7, $t7, $t1
-    add $t7, $t7, $t2
-    
-    lw $t0, 0($t7) #Load color into PLAYING_FIELD
-    jr $ra #RETURN TO CALLER FUNCTION (DRAW_PIXEL_BOARD)
 
 # Takes 3 params
 # $a0 -> x
@@ -567,3 +545,303 @@ draw_line_loop:
 draw_line_end:
     jr $ra
 
+
+# Takes 3 params
+# $a0 -> x
+# $a1 -> y
+# $a2 -> color
+
+#NO PARAMS LOAD COLUMN COORDINATE FROM MEMORY
+draw_curr_column:
+    la $t9, CURR_COLUMN_COORD
+    lw $a0, 0($t9) #LOAD IN X COORDINATE
+    lw $a1, 4($t9) #LOAD IN Y COORDINATE
+    la $t8, CURR_COLUMN
+    
+    li $t7, 0 #initialize loop counter
+    li $a3, 3 #initialize loop counter end value
+    
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+
+draw_curr_column_loop:
+    bge $t7, $a3, draw_curr_end
+    lw $a2, 0($t8) #load in color
+    
+    addi $sp, $sp, -12
+    sw $a0, 0($sp) #LOAD IN X COORDINATE
+    sw $a1, 4($sp) #LOAD IN Y COORDINATE
+    sw $a2, 8($sp) #load in color
+    
+    #PARAMETERS:
+    # $a0: x coordinate 
+    # $a1: y coordinate
+    # IMPLEMENT VALID COORDINATE CHECKER
+    
+    jal draw_pixel
+    
+    addi $t8, $t8, 4 #MOVE TO NEXT COLOR
+    addi $a1, $a1, 1 #MOVE TO NEXT Y COORD
+    addi $t7, $t7, 1 #INCREMENT PROGRAM COUNTER
+    j draw_curr_column_loop
+
+draw_curr_end:
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+#NO PARAMS LOAD NEXT COLUMN FROM MEMORY
+draw_next_column:
+    lw $a0, NEXT_COLUMN_X
+    lw $a1, NEXT_COLUMN_Y
+    la $t8, CURR_COLUMN
+    
+    li $t7, 0 #initialize loop counter
+    li $a3, 3 #initialize loop counter end value
+    
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+
+draw_next_column_loop:
+    bge $t7, $a3, draw_next_end
+    lw $a2, 0($t8) #load in color
+    
+    addi $sp, $sp, -12
+    sw $a0, 0($sp) #LOAD IN X COORDINATE
+    sw $a1, 4($sp) #LOAD IN Y COORDINATE
+    sw $a2, 8($sp) #load in color
+    
+    #PARAMETERS:
+    # $a0: x coordinate 
+    # $a1: y coordinate
+    # IMPLEMENT VALID COORDINATE CHECKER
+    
+    jal draw_pixel
+    
+    addi $t8, $t8, 4 #MOVE TO NEXT COLOR
+    addi $a1, $a1, 1 #MOVE TO NEXT Y COORD
+    addi $t7, $t7, 1 #INCREMENT PROGRAM COUNTER
+    j draw_next_column_loop
+
+draw_next_end:
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+#-------
+# END OF DRAW GAMEBOARD FUNCTIONS
+#-------
+
+#-------
+# START OF DRAW IN GAME FUNCTION
+#-------
+
+#I want this to take in 3 parameters;
+# 1 color 
+# 2 - 3: (x, y) coordinate 
+#These will all be in the stack when I call it so pop 5 times total (pop 2 in store_in_playing_field (pop last 3 again in draw_pixel)
+draw_pixel_board:
+    #-----
+    # LOAD PARAMETER VALUES PASSED IN
+    #----
+    lw $t0, 0($sp) #This will be the color
+    lw $t1, 4($sp) #This will be the x coordinate
+    lw $t2, 8($sp) #This will be the y coordinate
+    
+    #-----
+    # SAVE PARAMETER VALUES ONTO STACK FOR STORE_IN_PLAYING_FIELD (RA FOR OUR FUNCTION RETURN ADDRESS)
+    #----
+    addiu $sp, $sp, -16 #make 4 * 6 bytes of space on the stack
+    sw $t0, 0($sp) #This will be the color
+    sw $t1, 4($sp) #This will be the x coordinate
+    sw $t2, 8($sp) #This will be the y coordinate
+    sw $ra, 12($sp) #Save return address to stack
+    
+    jal store_in_playing_field #Store the pixel in the PLAYING_FIELD first
+    
+    #-----
+    # LOAD PARAMETER VALUES FROM WHAT WAS PASSED IN
+    #----
+    lw $t7, ADDR_DSPL #Load Bitmap address into t0
+    lw $ra, 0($sp) #RETURN ADDRESS SHOULD BE AT THE TOP
+    lw $t0, 4($sp) #This will be the color
+    lw $t1, 8($sp) #This will be the x coordinate
+    lw $t2, 12($sp) #This will be the y coordinate
+    addi $sp, $sp 16 #move stack pointer down 
+
+    mul $t2, $t2, 128 # skip (128 * y) or (4 * 32 (each address is 4 bytes and 32 addresses in a row))
+    mul $t1, $t1, 4 # x offset (multiply by 4 bytes)
+    
+    # add the row and column offsets to the base address
+    add $t7, $t7, $t1
+    add $t7, $t7, $t2
+    
+    # store the color at the computed address
+    sw $t0, 0($t7)
+    
+    #return to caller
+    jr $ra
+    
+#I want this to take in 3 parameters;
+# 1 color 
+# 2 - 3: (x, y) coordinate 
+#These will all be in the stack when I call it so pop 5 times total (pop 2 in store_in_playing_field (pop last 3 again in draw_pixel)
+store_in_playing_field:
+    la $t7, PLAYING_FIELD
+    
+    lw $t3, GAMEBOARD_OFFSET_X
+    lw $t4, GAMEBOARD_OFFSET_Y
+    lw $t0, 0($sp) #This will be the color
+    lw $t1, 4($sp) #This will be the x coordinate
+    lw $t2, 8($sp) #This will be the y coordinate
+    addi $sp, $sp 12
+    
+    #Calculate memory address to store color pointe rin with offset factored in
+    sub $t1, $t1, $t3
+    sub $t2, $t2, $t4
+    
+    #Subtract by another 1 to account for boundaries
+    subi $t1, $t1, 1
+    subi $t2, $t2, 1
+    
+    mul $t2, $t2, 32 # skip (32 * y) or (4 * 8 (each address is 4 bytes and 8 addresses in a row in the playable space))
+    mul $t1, $t1, 4 # x offset (multiply by 4 bytes)
+    
+    # add the row and column offsets to the base address
+    add $t7, $t7, $t1
+    add $t7, $t7, $t2
+    
+    lw $t0, 0($t7) #Load color into PLAYING_FIELD
+    jr $ra #RETURN TO CALLER FUNCTION
+
+#------
+# END OF DRAW IN GAME FUNCTIONS
+#------
+
+#------
+# KEYBOARD FUNCTIONS
+#------
+keyboard_input_check:
+    lw $t0, ADDR_KBRD
+    lw $t8, 0($t0)
+    beq $t8, 1, keyboard_input
+
+keyboard_input:
+    lw $t2, 4($t0)
+    beq $t2, 0x71, respond_to_Q #Quit if 'q' is pressed
+    beq $t2, 0x61, respond_to_A #Quit if 'a' is pressed
+
+respond_to_A:
+    #STEP 0: LOAD IN COLUMN COORDINATIONS (THESE WILL BE THE CORDS OF THE TOP GEM)
+    la $t9, CURR_COLUMN_COORD #Get base address of column
+    lw $a0, 0($t9) #x coord
+    lw $a1, 4($t9) #y coord
+    
+    #Save return address
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    #Initialize count and loop condition registers (loop 3 times)
+    li $t7, 0
+    li $a3, 3
+    
+    #STEP 1: CHECK VALID BOUNDARY TO THE LEFT
+    subi $a0, $a0, -1
+
+response_to_A_check_loop:
+    bge $t7, $a3, move_gems_left
+    
+    #load onto stack to be used
+    addi $sp, $sp, -16
+    sw $a0, 0($sp) #New x coord
+    sw $a1, 4($sp) #y coord    
+    #SAVE VALUES SO WE CAN REVERT OUR REGISTERS
+    sw $a0, 8($sp) #New x coord
+    sw $a1, 12($sp) #y coord
+    
+    jal check_in_bounds
+    
+    #TODO: CHECK FOR COLLISIONS TOO (YOU CAN USE THE MEMORY BLOCK I ALLOCATED IN 'PLAYING_FIELD_HEIGHTS' OR 'PLAYING_FIELD')
+    
+    lw $v1, 0($sp) #RETURN VALUE FROM 'check_in_bounds'
+    lw $a0, 4($sp) #New x coord
+    lw $a1, 8($sp) #y coord    
+    addi $sp, $sp, 12
+    #IF INVALID MOVE RETURN AND DO NOTHING
+    beq $v1, 0, return_response_A
+    
+    addi $t7, $t7, 1 #Increment counter
+    addi $a1, $a1, 1 #Update GEM Coordinate
+    j response_to_A_check_loop
+
+#IF ALL MOVES VALID MOVE GEMS
+move_gems_left:
+    la $t9, CURR_COLUMN_COORD #Get base address of column
+    lw $a0, 0($t9) #x coord
+    addi $a0, $a0, -1 #Move x coordinate left
+    sw $a0, 0($t9) #Update coordinate of x in COLUMN_COORD
+    
+#IF NOT VALID DO NOTHING
+return_response_A:
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra    
+
+#TERMINATE PROGRAM
+respond_to_Q:
+    li $v0, 10
+    syscall
+#------
+# END OF KEYBOARD FUNCTIONS
+#------
+
+#-------
+# Boundary Checker Logic Function (INCLUDING COLLISIONS)
+#-------
+
+#PARAMETERS:
+# $a0: x coordinate 
+# $a1: y coordinate
+# WILL RETURN 1 IF VALID OTHERWISE 0
+check_in_bounds:
+    #Step 0: Load in input parameters
+    lw $a0, 0($sp) # x coordinate
+    lw $a1, 4($sp) # y coordinate
+    addi $sp, $sp, 8
+    
+    #Step 1: Load in all 'Game boundary' values
+    lw $t0, GAMEBOARD_OFFSET_X
+    lw $t1, GAMEBOARD_OFFSET_Y
+    lw $t2, GAMEBOARD_WIDTH
+    lw $t3, GAMEBOARD_HEIGHT
+    
+    #Step 2: Compute boundaries
+    #Compute farther x boundary
+    add $t2, $t2, $t0 
+    addi $t2, $t2, 1
+    
+    #compute bottom y boundary
+    add $t3, $t3, $t1
+    addi $t3, $t3, 1
+    
+    #Step 3: branch statements to check if points are in boundaries
+    bge $a0, $t2, out_of_bounds_return #Check if x coordinate is out of bounds
+    bge $a1, $t3, out_of_bounds_return #Check if y coordinate is out of bounds
+    ble $a0, $t0 out_of_bounds_return #Check if x coordinate is out of bounds (too small)
+    ble $a1, $t1 out_of_bounds_return #Check if y coordinate is out of bounds (too small)
+
+in_of_bounds_return:
+    #push 1 to stack so caller can pop and return
+    li $t5, 1
+    addi $sp, $sp, -4
+    sw $t5, 0($sp)
+
+return_from_bounds:
+    jr $ra
+    
+out_of_bounds_return:
+    #push 0 to stack so caller can pop and return
+    li $t5, 0
+    addi $sp, $sp, -4
+    sw $t5, 0($sp)
+    j return_from_bounds
