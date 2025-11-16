@@ -940,6 +940,8 @@ respond_to_Q:
 # Boundary Checker Logic Function (INCLUDING COLLISIONS)
 #-------
 
+#TODO: IMPLEMENT COLLISION CHECKING LOGIC HERE TOO IF NEEDED
+
 #PARAMETERS:
 # $a0: x coordinate 
 # $a1: y coordinate
