@@ -690,6 +690,8 @@ draw_next_end:
 # 1 color 
 # 2 - 3: (x, y) coordinate 
 #These will all be in the stack when I call it so pop 5 times total (pop 2 in store_in_playing_field (pop last 3 again in draw_pixel)
+
+#TODO THIS ISNT BEING USED BUT YOU CAN TRY TO USE IT IF YOU WANT TO SAVE COORDINATES TO 'PLAYING_FIELD' MEMORY BLOCK ONCE A COLUMN IS PLACED (TEST IT OUT THERE MAY BE BUGS)
 store_in_playing_field:
     la $t7, PLAYING_FIELD
     
