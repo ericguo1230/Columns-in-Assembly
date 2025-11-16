@@ -112,6 +112,9 @@ PLAYING_FIELD_HEIGHTS:
 main:
     # Initialize the game
     jal setup_game
+
+    #TODO: MAYBE UPDATE NEXT COLUMN LOGIC TO DRAW A NEW RANDOM COLUMN AFTER SETUP_GAME?? (REFACTOR  'draw_random_column')
+    
     # li $v0, 10
     # syscall
 
@@ -123,7 +126,6 @@ game_loop:
 	# 2b. Update locations (capsules)
 
     # TODO: IMPLEMENT LOGIC TO CHECK IF COLUMN HITS GROUND (IF SO RESET YOU NEED TO SAVE THE COLUMN AND CREATE A NEW ONE FROM START POSITION)
-    # SUGGESTION: USE THE 'change_curr_column_from_next' FUNCTION TO LOAD NEXT COLUMN COLORS INTO CURR_COLUMN THEN RESET POSITION?
 
 	# 3. Draw the screen
 	jal draw_screen
@@ -305,9 +307,6 @@ draw_random_column_loop:
     bge $t6, $a3, draw_random_column_loop_end
     # Step 1: Get a random number
     #Save param a values to stack as 'generate_random_num' overwrites registers
-    addi $sp, $sp, -8
-    sw $a0, 0($sp) #x coord for displaying next column
-    sw $a1, 4($sp) #y coord for displaying next column
 
     jal generate_random_num
 
@@ -315,15 +314,12 @@ draw_random_column_loop:
     jal get_color_from_number
     
     lw $a2, 0($sp)  #Get the color from top of stack passed on from 'get_color_from_number'
-    lw $a0, 4($sp) #x coord for displaying next column
-    lw $a1, 8($sp) #y coord for displaying next column
-    addi $sp, $sp, 12
+    addi $sp, $sp, 4
     
     # Step 3: save the pixel in our CURR_COLUMN
     jal save_color_curr_column
     
     #update $a1 by $t6
-    add $a1, $a1, 1
     addi $t6, $t6, 1
     j draw_random_column_loop
     
