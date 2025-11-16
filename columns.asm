@@ -112,8 +112,6 @@ PLAYING_FIELD_HEIGHTS:
 main:
     # Initialize the game
     jal setup_game
-
-    #TODO: MAYBE UPDATE NEXT COLUMN LOGIC TO DRAW A NEW RANDOM COLUMN AFTER SETUP_GAME?? (REFACTOR  'draw_random_column')
     
     # li $v0, 10
     # syscall
