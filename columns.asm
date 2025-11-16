@@ -41,11 +41,11 @@ GAMEBOARD_TO_HEIGHT_OFFSET_X:
 
 #Height of the Game Board may be convieninent for performing calculations later
 GAMEBOARD_HEIGHT:
-    .word 0x0000000f
+    .word 0x00000010
 
 #WIDTH OF THE GAMEBOARD
 GAMEBOARD_WIDTH:
-    .word 0x00000006
+    .word 0x00000008
 
 #Colors of GAMEBOARD WALLS
 GAMEBOARD_COLOR:
