@@ -617,7 +617,7 @@ draw_curr_column_loop:
     sw $a1, 4($sp) #LOAD IN Y COORDINATE
     sw $a2, 8($sp) #load in color
     
-    # TODO: IMPLEMENT VALID COORDINATE CHECKER BEFORE DRAWING PIXEL?
+    # TODO: IMPLEMENT VALID COORDINATE CHECKER BEFORE DRAWING PIXEL? (you could even use 'check_in_bounds' function here)
     
     jal draw_pixel
     
