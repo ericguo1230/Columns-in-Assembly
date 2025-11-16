@@ -753,7 +753,8 @@ keyboard_input:
     lw $t2, 4($t0)
     beq $t2, 0x71, respond_to_Q #Quit if 'q' is pressed
     beq $t2, 0x61, respond_to_A #Quit if 'a' is pressed
-    beq $t2, 0x64, respond_to_D #Quit if 'a' is pressed
+    beq $t2, 0x64, respond_to_D #Quit if 'd' is pressed
+    beq $t2, 0x73, respond_to_S #Quit if 's' is pressed
     
 keyboard_input_return:
     jr $ra
@@ -869,6 +870,63 @@ return_response_D:
     lw $ra, 0($sp)
     addi $sp, $sp, 4
     jr $ra    
+    
+respond_to_S:
+    #STEP 0: LOAD IN COLUMN COORDINATIONS (THESE WILL BE THE CORDS OF THE TOP GEM)
+    la $t9, CURR_COLUMN_COORD #Get base address of column
+    lw $a0, 0($t9) #x coord
+    lw $a1, 4($t9) #y coord
+    
+    #Save return address
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    #Initialize count and loop condition registers (loop 3 times)
+    li $t7, 0
+    li $a3, 3
+    
+    #STEP 1: CHECK VALID BOUNDARY TO THE RIGHT
+    addi $a1, $a1, 1
+
+response_to_S_check_loop:
+    bge $t7, $a3, move_gems_down
+    
+    #load onto stack to be used
+    addi $sp, $sp, -16
+    sw $a0, 0($sp) #x coord
+    sw $a1, 4($sp) #New y coord    
+    #SAVE VALUES SO WE CAN REVERT OUR REGISTERS
+    sw $a0, 8($sp) #x coord
+    sw $a1, 12($sp) #New y coord
+    
+    jal check_in_bounds
+    
+    #TODO: CHECK FOR COLLISIONS TOO (YOU CAN USE THE MEMORY BLOCK I ALLOCATED IN 'PLAYING_FIELD_HEIGHTS' OR 'PLAYING_FIELD')
+    
+    lw $v1, 0($sp) #RETURN VALUE FROM 'check_in_bounds'
+    lw $a0, 4($sp) #New x coord
+    lw $a1, 8($sp) #y coord    
+    addi $sp, $sp, 12
+    #IF INVALID MOVE RETURN AND DO NOTHING
+    beq $v1, 0, return_response_S
+    
+    addi $t7, $t7, 1 #Increment counter
+    addi $a1, $a1, 1 #Update GEM Coordinate
+    j response_to_S_check_loop
+
+#IF ALL MOVES VALID MOVE GEMS
+move_gems_down:
+    la $t9, CURR_COLUMN_COORD #Get base address of column
+    lw $a1, 4($t9) #y coord
+    addi $a1, $a1, 1 #Move y coordinate down
+    sw $a1, 4($t9) #Update coordinate of y in COLUMN_COORD
+    
+#IF NOT VALID DO NOTHING
+return_response_S:
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra    
+
 
 #TERMINATE PROGRAM
 respond_to_Q:
