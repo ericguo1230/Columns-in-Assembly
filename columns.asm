@@ -1,3 +1,12 @@
+################# CSC258 Assembly Final Project ###################
+# This file contains our implementation of Columns.
+#
+# Student 1: Eric Guo 1008084911
+# Student 2: Name, Student Number (if applicable)
+#
+# We assert that the code submitted here is entirely our own 
+# creation, and will indicate otherwise when it is not.
+#
 ######################## Bitmap Display Configuration ########################
 # - Unit width in pixels:       8
 # - Unit height in pixels:      8
@@ -36,7 +45,7 @@ GAMEBOARD_HEIGHT:
 
 #WIDTH OF THE GAMEBOARD
 GAMEBOARD_WIDTH:
-    .word 0x00000008
+    .word 0x00000007
 
 #Colors of GAMEBOARD WALLS
 GAMEBOARD_COLOR:
@@ -67,6 +76,10 @@ COLOR_PURPLE:
 
 COLOR_ORANGE:
     .word 0xFFA500
+    
+#GRAVITY SPEED UP COUNTER CONTROL HOW OFTEN GRAVITY WILL SPEED UP
+GRAVITY_SPEED_UP_COUNTER:
+    .word  0xE10   #60 so 60 seconds (it runs in the gravity counter)
 #----------------
     
 ##############################################################################
@@ -85,6 +98,18 @@ CURR_COLUMN_COLORS:
 NEXT_COLUMN_COLORS:
     .space 12
 
+# The number of bytes to display the current column colors(3 x 1) ints (4 bytes long) 
+NEXT_COLUMN_COLORS_2:
+    .space 12
+    
+# The number of bytes to display the current column colors(3 x 1) ints (4 bytes long) 
+NEXT_COLUMN_COLORS_3:
+    .space 12
+
+# The number of bytes to display the current column colors(3 x 1) ints (4 bytes long) 
+NEXT_COLUMN_COLORS_4:
+    .space 12
+
 #Store the (x, y) coordinates of the current column IMPORTANT: (THIS ONLY STORES THE TOP COORDINATE, ADD 1 TO Y TO GET THE 2nd AND BOTTOM GEM COORDINATE)
 CURR_COLUMN_COORD:
     .space 8
@@ -92,6 +117,10 @@ CURR_COLUMN_COORD:
 # The number of bytes needed to store the height of each column in playing field (8 ints)
 PLAYING_FIELD_HEIGHTS:
     .space 32
+
+#GRAVITY COUNTER FOR FALLING COLUMN #One integer so 4 bytes
+FALLING_COUNTER_VALUE:
+    .space 4
     
 ##############################################################################
 # Code
@@ -103,11 +132,53 @@ PLAYING_FIELD_HEIGHTS:
 main:
     # Initialize the game
     jal setup_game
-
+    
+    #Setup gravity counter
+    li $t9 60
+    sw $t9, FALLING_COUNTER_VALUE
+    
+    lw $t8 GRAVITY_SPEED_UP_COUNTER
+    
 game_loop:
+    #Save gravity counter to stack
+    addi $sp, $sp, -8
+    sw $t9, 0($sp) #Save gravity counter to stack
+    sw $t8, 4($sp) #Save gravity speed up counter to stack
     # 1a. Check if key has been pressed
     # 1b. Check which key has been pressed
     jal keyboard_input_check
+    
+    #Load gravity pointer from stack
+    lw $t9 0($sp)
+    lw $t8 4($sp)
+    addi $sp, $sp, 8
+    
+    # PERFORM GRAVITY SPEED UP CHECK
+    bgt $t8, $zero skip_gravity_speed_up
+    la $t0, FALLING_COUNTER_VALUE
+    lw $t1, 0($t0)
+    # Make gravity value 75% of the original
+    sra  $t2, $t1, 2      # t2 = x / 4  (arithmetic shift right by 2)
+    sub  $t1, $t1, $t2    # t1 = x - (x / 4) = 0.75 * x (integer)
+    #Save back into falling value
+    sw $t1, 0($t0)
+    lw $t8 GRAVITY_SPEED_UP_COUNTER
+
+skip_gravity_speed_up:
+    # Perform the gravity
+    bgt $t9, $zero skip_gravity
+    #Move column down 1
+    la $t0, CURR_COLUMN_COORD
+    lw $t1, 4($t0)
+    addi $t1, $t1, 1
+    sw $t1, 4($t0)
+    lw $t9 FALLING_COUNTER_VALUE
+    
+skip_gravity:
+    #Save back onto stack
+    addi $sp, $sp, -8
+    sw $t9, 0($sp) #Save gravity counter
+    sw $t8, 4($sp) #Save gravity speed up counter
     # 2a. Check for collisions
 	# 2b. Update locations (capsules)
     jal check_collision_and_place
@@ -116,11 +187,19 @@ game_loop:
 	# 4. Sleep
     jal sleep_60fps
     # 5. Go back to Step 1
+    
+    lw $t9, 0($sp) #load in gravity counter
+    lw $t8, 4($sp) #save gravity speed up counter
+    addi $sp, $sp, 8
+    
+    addi $t9, $t9, -1
+    addi $t8, $t8, -1
+    
     j game_loop
     
 sleep_60fps:
     li $v0, 32          # syscall 32 = sleep
-    li $a0, 100         # sleep for 100ms (roughly 60fps)
+    li $a0, 16         # sleep for 100ms (roughly 60fps)
     syscall
     jr $ra
 
@@ -133,7 +212,7 @@ draw_screen:
     jal draw_gameboard #DRAW BOARD BOUNDARY
     jal draw_playing_field #DRAW PLACED GEMS
     jal draw_curr_column #DRAW CURRENT COLUMN
-    jal draw_next_column
+    jal draw_next_columns #DRAW ALL NEXT COLUMNS
     
     lw $ra, 0($sp)
     addi $sp, $sp, 4
@@ -157,8 +236,27 @@ setup_game:
     sw $ra, 0($sp)
     
     jal draw_gameboard #DRAW GAMEBOARD
-    jal draw_random_column
+    
+    #RUN LOOP 5 TIMES TO LOAD IN ALL COMPONENTS
+    li $t0, 5
+    li $t1, 0
+setup_game_next_column_loop:
+    bge $t1, $t0 setup_game_rest
+    #Save onto stack
+    addi $sp, $sp, -8
+    sw $t1, 0($sp)
+    sw $t0, 4($sp)
+    
+    jal draw_random_column #DRAW RANDOM COLUMN TO NEXT_COLUMN_4
     jal change_curr_column_from_next
+    #Restore from stack
+    lw $t1, 0($sp)
+    lw $t0, 4($sp)
+    addi $sp, $sp, 8
+    
+    addi $t1, $t1, 1
+    j setup_game_next_column_loop
+setup_game_rest:
     jal setup_column_position
     
     lw $ra, 0($sp)
@@ -170,7 +268,7 @@ setup_column_position:
     lw $t0, GAMEBOARD_OFFSET_X  # get board's x offset
     lw $t1, GAMEBOARD_OFFSET_Y  # get board's y offset
     addi $a0, $t0, 4            # start at column 4 (middle of 8-wide board)
-    addi $a1, $t1, 1            # start at row 1 (just below ceiling)
+    addi $a1, $t1, -2            # start at row 1 (just below ceiling)
     sw $a0, 0($t9)              # save x coordinate
     sw $a1, 4($t9)              # save y coordinate
     jr $ra
@@ -278,14 +376,41 @@ draw_random_column_loop_end:
 change_curr_column_from_next:
     la $t9, CURR_COLUMN_COLORS  # address of current column colors
     la $t8, NEXT_COLUMN_COLORS  # address of next column colors
+    la $t7, NEXT_COLUMN_COLORS_2 # address of next column colors 2
+    la $t6, NEXT_COLUMN_COLORS_3 # address of next column colors 3
+    la $t5, NEXT_COLUMN_COLORS_4 # address of next column colors 4
+    
+    #LOAD IN ALL OTHER COLUMN COLORS
     
     # Copy next column colors to current column
+    # Load from 1 -> curr column then 2-> 1 then 3 -> 2 then 4 -> 3
     lw $a0, 0($t8)              # load first color from next
     lw $a1, 4($t8)              # load second color from next
     lw $a2, 8($t8)              # load third color from next
     sw $a0, 0($t9)              # store first color to current
     sw $a1, 4($t9)              # store second color to current
     sw $a2, 8($t9)              # store third color to current
+    
+    lw $a0, 0($t7)              # load first color from next 2
+    lw $a1, 4($t7)              # load second color from next 2
+    lw $a2, 8($t7)              # load third color from next 2
+    sw $a0, 0($t8)              # store first color to next 
+    sw $a1, 4($t8)              # store second color to next 
+    sw $a2, 8($t8)              # store third color to next 
+    
+    lw $a0, 0($t6)              # load first color from next 3
+    lw $a1, 4($t6)              # load second color from next 3
+    lw $a2, 8($t6)              # load third color from next 3
+    sw $a0, 0($t7)              # store first color to next 2
+    sw $a1, 4($t7)              # store second color to next 2
+    sw $a2, 8($t7)              # store third color to next 2
+    
+    lw $a0, 0($t5)              # load first color from next 4
+    lw $a1, 4($t5)              # load second color from next 4
+    lw $a2, 8($t5)              # load third color from next 4
+    sw $a0, 0($t6)              # store first color to next 3
+    sw $a1, 4($t6)              # store second color to next 3
+    sw $a2, 8($t6)              # store third color to next 3
     
     addi $sp, $sp, -4
     sw $ra, 0($sp)
@@ -301,7 +426,7 @@ change_curr_column_from_next:
 #1: Color stored in $a2
 #2: Block index stored in $t6
 save_color_next_column:
-    la $t9, NEXT_COLUMN_COLORS  # base address of next column array
+    la $t9, NEXT_COLUMN_COLORS_4  # base address of next column array
     mul $t1, $t6, 4             # calculate offset (index * 4 bytes)
     add $t9, $t9, $t1           # add offset to base address
     sw $a2, 0($t9)              # store color at calculated address
@@ -516,23 +641,30 @@ draw_line_end:
 #NO PARAMS LOAD COLUMN COORDINATE FROM MEMORY
 draw_curr_column:
     la $t9, CURR_COLUMN_COORD
-    lw $a0, 0($t9)
-    lw $a1, 4($t9)
+    lw $a0, 0($t9) #x coord
+    lw $a1, 4($t9) #y coord
     la $t8, CURR_COLUMN_COLORS
     li $t7, 0
     li $a3, 3
+    #LOAD IN Y OFFSET TO CHECK WHEN TO DRAW PIXEL
+    la $t6 GAMEBOARD_OFFSET_Y
+    lw $t5, 0($t6)
+    
     addi $sp, $sp, -4
     sw $ra, 0($sp)
 draw_curr_column_loop:
     bge $t7, $a3, draw_curr_end
     lw $a2, 0($t8)
-    addi $sp, $sp, -4
-    addi $sp, $sp, -4
-    addi $sp, $sp, -4
+    
+    #CHECK IF COLUMN IS ABOVE CEILING IF SO CONTINUE AND DO NOT DRAW
+    ble $a1, $t5 skip_draw_pixel
+    addi $sp, $sp, -12
     sw $a0, 0($sp)
     sw $a1, 4($sp)
     sw $a2, 8($sp)
     jal draw_pixel
+
+skip_draw_pixel:
     addi $t8, $t8, 4
     addi $a1, $a1, 1
     addi $t7, $t7, 1
@@ -541,6 +673,21 @@ draw_curr_end:
     lw $ra, 0($sp)
     addi $sp, $sp, 4
     jr $ra
+    
+draw_next_columns:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    jal draw_next_column
+    jal draw_next_column_2
+    jal draw_next_column_3
+    jal draw_next_column_4
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    
+    jr $ra
+    
 
 #NO PARAMS LOAD NEXT COLUMN FROM MEMORY
 draw_next_column:
@@ -566,6 +713,90 @@ draw_next_column_loop:
     addi $t7, $t7, 1
     j draw_next_column_loop
 draw_next_end:
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+draw_next_column_4:
+    lw $a0, NEXT_COLUMN_X
+    lw $a1, NEXT_COLUMN_Y
+    la $t8, NEXT_COLUMN_COLORS_4
+    addi $a0, $a0, 6
+    li $t7, 0
+    li $a3, 3
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+draw_next_column_4_loop:
+    bge $t7, $a3, draw_next_4_end
+    lw $a2, 0($t8)
+    addi $sp, $sp, -4
+    addi $sp, $sp, -4
+    addi $sp, $sp, -4
+    sw $a0, 0($sp)
+    sw $a1, 4($sp)
+    sw $a2, 8($sp)
+    jal draw_pixel
+    addi $t8, $t8, 4
+    addi $a1, $a1, 1
+    addi $t7, $t7, 1
+    j draw_next_column_4_loop
+draw_next_4_end:
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+draw_next_column_2:
+    lw $a0, NEXT_COLUMN_X
+    lw $a1, NEXT_COLUMN_Y
+    la $t8, NEXT_COLUMN_COLORS_2
+    addi $a0, $a0, 2
+    li $t7, 0
+    li $a3, 3
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+draw_next_column_2_loop:
+    bge $t7, $a3, draw_next_2_end
+    lw $a2, 0($t8)
+    addi $sp, $sp, -4
+    addi $sp, $sp, -4
+    addi $sp, $sp, -4
+    sw $a0, 0($sp)
+    sw $a1, 4($sp)
+    sw $a2, 8($sp)
+    jal draw_pixel
+    addi $t8, $t8, 4
+    addi $a1, $a1, 1
+    addi $t7, $t7, 1
+    j draw_next_column_2_loop
+draw_next_2_end:
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+draw_next_column_3:
+    lw $a0, NEXT_COLUMN_X
+    lw $a1, NEXT_COLUMN_Y
+    addi $a0, $a0, 4
+    la $t8, NEXT_COLUMN_COLORS_3
+    li $t7, 0
+    li $a3, 3
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+draw_next_column_3_loop:
+    bge $t7, $a3, draw_next_3_end
+    lw $a2, 0($t8)
+    addi $sp, $sp, -4
+    addi $sp, $sp, -4
+    addi $sp, $sp, -4
+    sw $a0, 0($sp)
+    sw $a1, 4($sp)
+    sw $a2, 8($sp)
+    jal draw_pixel
+    addi $t8, $t8, 4
+    addi $a1, $a1, 1
+    addi $t7, $t7, 1
+    j draw_next_column_3_loop
+draw_next_3_end:
     lw $ra, 0($sp)
     addi $sp, $sp, 4
     jr $ra
@@ -775,8 +1006,6 @@ check_collision:
     
     ble $a0, $t0, collision_yes
     bge $a0, $t2, collision_yes
-    lw $t1, GAMEBOARD_OFFSET_Y
-    ble $a1, $t1, collision_yes
     la $t7, PLAYING_FIELD
     lw $t3, GAMEBOARD_OFFSET_X
     lw $t4, GAMEBOARD_OFFSET_Y
@@ -1266,11 +1495,10 @@ check_in_bounds:
     add $t3, $t3, $t1
     addi $t3, $t3, 1
     
-    #Step 3: branch statements to check if points are in boundaries
+    #Step 3: branch statements to check if points are in boundaries (DO NOT NEED TO CHECK FOR Y AS WE WILL SET THE STARTING POINT)
     bge $a0, $t2, out_of_bounds_return #Check if x coordinate is out of bounds
     bge $a1, $t3, out_of_bounds_return #Check if y coordinate is out of bounds
     ble $a0, $t0, out_of_bounds_return #Check if x coordinate is out of bounds (too small)
-    ble $a1, $t1, out_of_bounds_return #Check if y coordinate is out of bounds (too small)
 
 in_of_bounds_return:
     #push 1 to stack so caller can pop and return
