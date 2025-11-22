@@ -1,12 +1,3 @@
-################# CSC258 Assembly Final Project ###################
-# This file contains our implementation of Columns.
-#
-# Student 1: Eric Guo 1008084911
-# Student 2: Name, Student Number (if applicable)
-#
-# We assert that the code submitted here is entirely our own 
-# creation, and will indicate otherwise when it is not.
-#
 ######################## Bitmap Display Configuration ########################
 # - Unit width in pixels:       8
 # - Unit height in pixels:      8
@@ -1420,7 +1411,7 @@ response_to_S_check_loop:
     
     lw $v1, 0($sp) #RETURN VALUE FROM 'check_collision'
     lw $a0, 4($sp) #New x coord
-    lw $a1, 8($sp) #y coord    
+    lw $a1, 8($sp) #y coord
     addi $sp, $sp, 12
     #IF INVALID MOVE RETURN AND DO NOTHING
     bne $v1, 0, return_response_S
