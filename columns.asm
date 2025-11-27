@@ -20,6 +20,15 @@
 # Immutable Data
 ##############################################################################
 # The address of the bitmap display. Don't forget to connect it!
+
+COLOR_GHOST: 
+    .word 0x444444    # dark grey outline
+
+GAME_STATE:
+    .space 4
+    
+PAUSE_STATE:
+    .space 4
 ADDR_DSPL:
     .word 0x10008000
 # The address of the keyboard. Don't forget to connect it!
@@ -125,13 +134,16 @@ FALLING_COUNTER_VALUE:
 ##############################################################################
 # Code
 ##############################################################################
-	.text
+.text
 	.globl main
 
     # Run the game.
 main:
     # Initialize the game
     jal setup_game
+    
+    # Initialize game state to playing
+    sw $zero, GAME_STATE
     
     #Setup gravity counter
     li $t9 60
@@ -140,6 +152,22 @@ main:
     lw $t8 GRAVITY_SPEED_UP_COUNTER
     
 game_loop:
+    # Always check for keyboard input (for pause, restart, quit)
+    addi $sp, $sp, -8
+    sw $t9, 0($sp)
+    sw $t8, 4($sp)
+    sw $ra, 8($sp)
+    addi $sp, $sp, -4
+    jal keyboard_input_check
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    lw $t9, 0($sp)
+    lw $t8, 4($sp)
+    addi $sp, $sp, 8
+    # Skip gameplay if game over
+    lw $t0, GAME_STATE
+    bnez $t0, skip_gameplay
+    
     #Save gravity counter to stack
     addi $sp, $sp, -8
     sw $t9, 0($sp) #Save gravity counter to stack
@@ -179,14 +207,28 @@ skip_gravity:
     addi $sp, $sp, -8
     sw $t9, 0($sp) #Save gravity counter
     sw $t8, 4($sp) #Save gravity speed up counter
+    
     # 2a. Check for collisions
-	# 2b. Update locations (capsules)
+    # 2b. Update locations (capsules)
     jal check_collision_and_place
+    
+skip_gameplay:
 	# 3. Draw the screen
     jal draw_screen
+    
+    # Draw game over text if needed
+    lw $t0, GAME_STATE
+    beqz $t0, skip_game_over_text
+    jal draw_game_over
+    
+skip_game_over_text:
 	# 4. Sleep
     jal sleep_60fps
     # 5. Go back to Step 1
+    
+    # Only update counters if not game over
+    lw $t0, GAME_STATE
+    bnez $t0, skip_counter_update
     
     lw $t9, 0($sp) #load in gravity counter
     lw $t8, 4($sp) #save gravity speed up counter
@@ -195,6 +237,7 @@ skip_gravity:
     addi $t9, $t9, -1
     addi $t8, $t8, -1
     
+skip_counter_update:
     j game_loop
     
 sleep_60fps:
@@ -203,16 +246,96 @@ sleep_60fps:
     syscall
     jr $ra
 
+
+
+
+# ---------------------------------------------------------
+# compute_landing_y
+# Input: none (reads CURR_COLUMN_COORD)
+# Output: v0 = predicted landing y (top of column)
+# ---------------------------------------------------------
+# ---------------------------------------------------------
+# compute_landing_y
+# Output: v0 = landing y (top gem)
+# ---------------------------------------------------------
+compute_landing_y:
+    la $t9, CURR_COLUMN_COORD
+    lw $t0, 0($t9)      # x
+    lw $t1, 4($t9)      # y (top)
+
+compute_loop:
+    # Push x
+    addi $sp,$sp,-4
+    sw $t0,0($sp)
+
+    # Push y+3 (one below bottom gem)
+    addi $sp,$sp,-4
+    addi $t2,$t1,3
+    sw $t2,0($sp)
+
+    jal check_collision
+
+    # Pop return value
+    lw $t3,0($sp)
+    addi $sp,$sp,4
+
+    # IF collision (t3 != 0)
+    bnez $t3, compute_done
+
+    # ELSE no collision → fall 1 row
+    addi $t1,$t1,1
+    j compute_loop
+
+compute_done:
+    move $v0,$t1
+    jr $ra
+
+
+
+# ---------------------------------------------------------
+# draw_ghost
+# draws a faint outline of where the column will land
+# ---------------------------------------------------------
+draw_ghost:
+    jal compute_landing_y
+    move $t2, $v0       # ghost top y
+
+    la $t9, CURR_COLUMN_COORD
+    lw $t1, 0($t9)      # x
+
+    la $t0, COLOR_GHOST
+    lw $t7, 0($t0)
+
+    li $t6, 0
+ghost_loop:
+    bge $t6, 3, ghost_end
+
+    addi $sp,$sp,-12
+    sw $t1,0($sp)
+    sw $t2,4($sp)
+    sw $t7,8($sp)
+    jal draw_pixel
+
+    addi $t2,$t2,1
+    addi $t6,$t6,1
+    j ghost_loop
+
+ghost_end:
+    jr $ra
+
+
+
 draw_screen:
     #Save return address
     addi $sp, $sp, -4
     sw $ra, 0($sp)
     
     jal clear_screen
-    jal draw_gameboard #DRAW BOARD BOUNDARY
-    jal draw_playing_field #DRAW PLACED GEMS
-    jal draw_curr_column #DRAW CURRENT COLUMN
-    jal draw_next_columns #DRAW ALL NEXT COLUMNS
+    jal draw_gameboard
+    jal draw_playing_field
+    jal draw_landing_preview
+    jal draw_curr_column
+    jal draw_next_columns
     
     lw $ra, 0($sp)
     addi $sp, $sp, 4
@@ -688,6 +811,98 @@ draw_next_columns:
     
     jr $ra
     
+#-----------------------------------------------------------------------------------------
+draw_landing_preview:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    # Get current column position
+    la $t9, CURR_COLUMN_COORD
+    lw $a0, 0($t9)              # x coordinate
+    lw $a1, 4($t9)              # y coordinate (top gem)
+    
+    # Save original position
+    move $t8, $a0
+    move $t9, $a1
+    
+find_landing:
+    # Check if bottom gem + 1 would collide
+    addi $t0, $t9, 3            # bottom gem is at y+2, so check y+3
+    
+    # Push parameters for check_collision
+    addi $sp, $sp, -8
+    sw $t8, 0($sp)              # x position
+    sw $t0, 4($sp)              # y position (bottom + 1)
+    jal check_collision
+    
+    lw $v1, 0($sp)              # get collision result
+    addi $sp, $sp, 4
+    
+    beq $v1, 1, found_landing   # if collision, found landing spot
+    
+    addi $t9, $t9, 1            # move down
+    j find_landing
+
+found_landing:
+    # Check if we hit the floor (not a block)
+    lw $t6, GAMEBOARD_OFFSET_Y
+    lw $t7, GAMEBOARD_HEIGHT
+    add $t6, $t6, $t7           # floor y position
+    
+    addi $t0, $t9, 3            # position we checked (y + 3)
+    bge $t0, $t6, hit_floor     # if we're at/past floor, it's the floor
+    
+    # Hit a block - check if it's one block above the floor
+    addi $t0, $t9, 2            # bottom gem position
+    addi $t1, $t6, -1           # one above floor
+    beq $t0, $t1, one_above_floor
+    
+    # Normal block collision
+    j continue_preview
+    
+one_above_floor:
+    # One block above floor, shift up 1
+    addi $t9, $t9, -2
+    j continue_preview
+    
+hit_floor:
+    # Hit the floor, move down 1 more
+    addi $t9, $t9, 1
+    
+continue_preview:
+    # Draw 3 preview gems
+    lw $a2, COLOR_GHOST
+    li $t7, 0
+    li $a3, 3
+    lw $t5, GAMEBOARD_OFFSET_Y
+    move $a0, $t8               # restore x
+    move $a1, $t9               # use landing y
+    
+
+#--------------------------------------------------------------
+    
+draw_preview_loop:
+    bge $t7, $a3, preview_done
+    ble $a1, $t5, skip_preview_pixel
+    
+    addi $sp, $sp, -12
+    sw $a0, 0($sp)
+    sw $a1, 4($sp)
+    sw $a2, 8($sp)
+    jal draw_pixel
+    
+skip_preview_pixel:
+    addi $a1, $a1, 1
+    addi $t7, $t7, 1
+    j draw_preview_loop
+    
+preview_done:
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+    
+
+
 
 #NO PARAMS LOAD NEXT COLUMN FROM MEMORY
 draw_next_column:
@@ -980,11 +1195,16 @@ place_gems:
     
     # Check for matches and clear them
     jal check_matches
+    # Check if game over
+    jal check_game_over
     
+    # Skip generating new column if game over
+    lw $t0, GAME_STATE
+    bnez $t0, place_gems_done
     # Generate new column and reset position
     jal change_curr_column_from_next
     jal setup_column_position
-    
+place_gems_done:
     lw $ra, 0($sp)
     addi $sp, $sp, 4
     jr $ra
@@ -1278,6 +1498,7 @@ keyboard_input:
     beq $t2, 0x64, respond_to_D # if 'd', move right
     beq $t2, 0x73, respond_to_S # if 's', move down
     beq $t2, 0x77, respond_to_W # if 'w', rotate colors
+    beq $t2, 0x72, respond_to_R # if 'r', restart game
     jr $ra                       # if other key, ignore
 
 respond_to_A:
@@ -1448,7 +1669,7 @@ respond_to_W:
     lw $t0, 0($t8) #First color
     lw $t1, 4($t8) #Second color
     lw $t2, 8($t8) #Third color
-
+    
 W_swap_colors:
     #SWAP COLORS (rotate upward)
     sw $t2, 0($t8) #Bottom -> Top
@@ -1457,6 +1678,71 @@ W_swap_colors:
 
 return_response_W:
     jr $ra  
+    
+    
+respond_to_R:
+    # Only restart if game is over
+    la $t0, GAME_STATE
+    lw $t1, 0($t0)
+    beqz $t1, return_response_R  # If not game over, ignore
+    
+    # Save return address
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    # Clear the playing field (set all to 0)
+    la $t0, PLAYING_FIELD
+    li $t1, 512                  # 512 bytes to clear (8x16x4)
+    li $t2, 0
+clear_field_loop:
+    beqz $t1, clear_field_done
+    sw $t2, 0($t0)
+    addi $t0, $t0, 4
+    addi $t1, $t1, -4
+    j clear_field_loop
+clear_field_done:
+    
+    # Reset game state to playing
+    la $t0, GAME_STATE
+    sw $zero, 0($t0)
+    
+    # Reset pause state to unpaused
+    la $t0, PAUSE_STATE
+    sw $zero, 0($t0)
+    
+    # Generate new columns
+    li $t0, 5
+    li $t1, 0
+restart_column_loop:
+    bge $t1, $t0 restart_column_done
+    addi $sp, $sp, -8
+    sw $t1, 0($sp)
+    sw $t0, 4($sp)
+    
+    jal draw_random_column
+    jal change_curr_column_from_next
+    
+    lw $t1, 0($sp)
+    lw $t0, 4($sp)
+    addi $sp, $sp, 8
+    
+    addi $t1, $t1, 1
+    j restart_column_loop
+restart_column_done:
+    
+    # Reset column position
+    jal setup_column_position
+    
+    # Reset gravity counter
+    li $t9, 60
+    sw $t9, FALLING_COUNTER_VALUE
+    lw $t8, GRAVITY_SPEED_UP_COUNTER
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    
+return_response_R:
+    jr $ra
 
 
 #TERMINATE PROGRAM
@@ -1515,3 +1801,284 @@ out_of_bounds_return:
     addi $sp, $sp, -4
     sw $t5, 0($sp)
     j return_from_bounds
+# Check if any gems breached the ceiling
+check_game_over:
+    la $t7, PLAYING_FIELD
+    lw $t8, GAMEBOARD_WIDTH
+    li $t0, 0
+check_game_over_loop:
+    bge $t0, $t8, check_game_over_done
+    sll $t1, $t0, 2
+    add $t2, $t7, $t1
+    lw $t3, 0($t2)
+    bnez $t3, trigger_game_over
+    addi $t0, $t0, 1
+    j check_game_over_loop
+trigger_game_over:
+    li $t4, 1
+    sw $t4, GAME_STATE
+check_game_over_done:
+    jr $ra
+
+# Draw "GAME OVER" text
+# Draw "GAME OVER" text - simple block letters
+draw_game_over:
+    addi $sp, $sp, -4
+    sw $ra, 0($sp)
+    
+    li $s7, 0xFFFFFF        # White color
+    lw $s0, GAMEBOARD_OFFSET_X
+    lw $s1, GAMEBOARD_OFFSET_Y
+    addi $s0, $s0, 2        # Start x position
+    addi $s1, $s1, 8        # Start y position (middle of board)
+    
+    # Draw 'G' (x=2)
+    move $a0, $s0
+    move $a1, $s1
+    jal draw_G
+    
+    # Draw 'A' (x=5)
+    addi $a0, $s0, 4
+    move $a1, $s1
+    jal draw_A
+    
+    # Draw 'M' (x=8)
+    addi $a0, $s0, 8
+    move $a1, $s1
+    jal draw_M
+    
+    # Draw 'E' (x=11)
+    addi $a0, $s0, 12
+    move $a1, $s1
+    jal draw_E
+    
+    lw $ra, 0($sp)
+    addi $sp, $sp, 4
+    jr $ra
+
+# Helper to draw a single pixel (saves registers)
+draw_letter_pixel:
+    addi $sp, $sp, -16
+    sw $a0, 0($sp)
+    sw $a1, 4($sp)
+    li $t9, 0xFFFFFF
+    sw $t9, 8($sp)
+    sw $ra, 12($sp)        # SAVE RETURN ADDRESS
+    jal draw_pixel
+    lw $ra, 0($sp)         # RESTORE RETURN ADDRESS
+    addi $sp, $sp, 4
+    jr $ra
+
+# Draw letter 'G' at position (a0, a1)
+# Pattern:
+# XX
+# X
+# X_X
+# X_X
+# XX
+draw_G:
+    addi $sp, $sp, -12
+    sw $ra, 0($sp)
+    sw $a0, 4($sp)
+    sw $a1, 8($sp)
+    
+    # Row 0: XX
+    jal draw_letter_pixel
+    addi $a0, $a0, 1
+    jal draw_letter_pixel
+    
+    # Row 1: X
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    sw $a1, 8($sp)
+    jal draw_letter_pixel
+    
+    # Row 2: X_X
+    addi $a1, $a1, 1
+    sw $a1, 8($sp)
+    jal draw_letter_pixel
+    addi $a0, $a0, 2
+    jal draw_letter_pixel
+    
+    # Row 3: X_X
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    sw $a1, 8($sp)
+    jal draw_letter_pixel
+    addi $a0, $a0, 2
+    jal draw_letter_pixel
+    
+    # Row 4: XX
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    jal draw_letter_pixel
+    addi $a0, $a0, 1
+    jal draw_letter_pixel
+    
+    lw $ra, 0($sp)
+    lw $a0, 4($sp)
+    lw $a1, 8($sp)
+    addi $sp, $sp, 12
+    jr $ra
+
+# Draw letter 'A' at position (a0, a1)
+# Pattern:
+# _X
+# X_X
+# XXX
+# X_X
+# X_X
+draw_A:
+    addi $sp, $sp, -12
+    sw $ra, 0($sp)
+    sw $a0, 4($sp)
+    sw $a1, 8($sp)
+    
+    # Row 0: _X
+    addi $a0, $a0, 1
+    jal draw_letter_pixel
+    
+    # Row 1: X_X
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    sw $a1, 8($sp)
+    jal draw_letter_pixel
+    addi $a0, $a0, 2
+    jal draw_letter_pixel
+    
+    # Row 2: XXX
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    sw $a1, 8($sp)
+    jal draw_letter_pixel
+    addi $a0, $a0, 1
+    jal draw_letter_pixel
+    addi $a0, $a0, 1
+    jal draw_letter_pixel
+    
+    # Row 3: X_X
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    sw $a1, 8($sp)
+    jal draw_letter_pixel
+    addi $a0, $a0, 2
+    jal draw_letter_pixel
+    
+    # Row 4: X_X
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    jal draw_letter_pixel
+    addi $a0, $a0, 2
+    jal draw_letter_pixel
+    
+    lw $ra, 0($sp)
+    lw $a0, 4($sp)
+    lw $a1, 8($sp)
+    addi $sp, $sp, 12
+    jr $ra
+
+# Draw letter 'M' at position (a0, a1)
+# Pattern:
+# X_X
+# XXX
+# X_X
+# X_X
+# X_X
+draw_M:
+    addi $sp, $sp, -12
+    sw $ra, 0($sp)
+    sw $a0, 4($sp)
+    sw $a1, 8($sp)
+    
+    # Row 0: X_X
+    jal draw_letter_pixel
+    addi $a0, $a0, 2
+    jal draw_letter_pixel
+    
+    # Row 1: XXX
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    sw $a1, 8($sp)
+    jal draw_letter_pixel
+    addi $a0, $a0, 1
+    jal draw_letter_pixel
+    addi $a0, $a0, 1
+    jal draw_letter_pixel
+    
+    # Row 2: X_X
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    sw $a1, 8($sp)
+    jal draw_letter_pixel
+    addi $a0, $a0, 2
+    jal draw_letter_pixel
+    
+    # Row 3: X_X
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    sw $a1, 8($sp)
+    jal draw_letter_pixel
+    addi $a0, $a0, 2
+    jal draw_letter_pixel
+    
+    # Row 4: X_X
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    jal draw_letter_pixel
+    addi $a0, $a0, 2
+    jal draw_letter_pixel
+    
+    lw $ra, 0($sp)
+    lw $a0, 4($sp)
+    lw $a1, 8($sp)
+    addi $sp, $sp, 12
+    jr $ra
+
+# Draw letter 'E' at position (a0, a1)
+# Pattern:
+# XX
+# X
+# XX
+# X
+# XX
+draw_E:
+    addi $sp, $sp, -12
+    sw $ra, 0($sp)
+    sw $a0, 4($sp)
+    sw $a1, 8($sp)
+    
+    # Row 0: XX
+    jal draw_letter_pixel
+    addi $a0, $a0, 1
+    jal draw_letter_pixel
+    
+    # Row 1: X
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    sw $a1, 8($sp)
+    jal draw_letter_pixel
+    
+    # Row 2: XX
+    addi $a1, $a1, 1
+    sw $a1, 8($sp)
+    jal draw_letter_pixel
+    addi $a0, $a0, 1
+    jal draw_letter_pixel
+    
+    # Row 3: X
+    lw $a0, 4($sp)
+    addi $a1, $a1, 1
+    sw $a1, 8($sp)
+    jal draw_letter_pixel
+    
+    # Row 4: XX
+    addi $a1, $a1, 1
+    jal draw_letter_pixel
+    addi $a0, $a0, 1
+    jal draw_letter_pixel
+    
+    lw $ra, 0($sp)
+    lw $a0, 4($sp)
+    lw $a1, 8($sp)
+    addi $sp, $sp, 12
+    jr $ra
